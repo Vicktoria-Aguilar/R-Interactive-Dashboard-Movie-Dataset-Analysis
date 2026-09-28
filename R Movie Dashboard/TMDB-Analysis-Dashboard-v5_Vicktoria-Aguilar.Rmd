@@ -1,0 +1,727 @@
+---
+title: "Final Project TMDB Movie Dataset Analysis: Trends in Movie Profitability and Ratings"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: scroll
+    theme: cosmo
+---
+
+```{r setup, include = TRUE}
+library(flexdashboard)
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(janitor)
+library(scales)
+library(stringr)
+library(plotly)
+library(htmlwidgets)
+library(reticulate)
+library(viridis)
+library(ggplot2)
+```
+
+The Dataset
+=====================================
+
+<br>
+<br>
+
+### Dataset
+
+Title: Full TMDB Movies Dataset 2024 (1M Movies)
+
+Source:  
+https://www.kaggle.com/datasets/asaniczka/tmdb-movies-dataset-2023-930k-movies
+
+The TMDb dataset contains 24 columns, the following were primarily used for analysis:
+
+- Movie titles
+- Release dates
+- Ratings
+- Revenue & budget
+- Genres
+- Studios
+
+Total movies analyzed: ~1,000,000 (before data cleaning)
+
+Goal: Explore profitability, trends, and rating behavior in the movie industry.
+
+
+Cleaning the Data
+=====================================
+
+<br>
+<br>
+
+### Python Preprocessing
+
+This was a particularly large data set (1 million rows of data) so python was employed to clean 
+the data and output a "clean" CSV file containing the cleaned data set to be used in R to analyze the 
+data in the following plots
+
+The script performs:
+
+- column standardization
+- duplicate removal
+- date parsing
+- numeric conversion
+- profit calculation
+- filtering invalid records
+- extracting primary genre
+
+```{python, echo = TRUE, eval = FALSE}
+# Import Python libraries
+import pandas as pd
+import numpy as np
+
+# Load dataset
+movies = pd.read_csv("TMDB_movie_dataset_v11.csv", low_memory=False)
+
+# Standardize column names (lowercase)
+movies.columns = movies.columns.str.lower()
+
+# Remove duplicates using movie id
+movies = movies.drop_duplicates(subset="id")
+
+# Convert column dates to release date
+movies["release_date"] = pd.to_datetime(movies["release_date"], errors="coerce")
+movies["year"] = movies["release_date"].dt.year
+
+numeric_cols = ["vote_average","vote_count","revenue","budget","runtime"]
+
+for col in numeric_cols:
+    movies[col] = pd.to_numeric(movies[col], errors="coerce")
+
+# Create profit column
+movies["profit"] = movies["revenue"] - movies["budget"]
+
+# Keep only released movies
+movies = movies[movies["status"] == "Released"]
+
+# Remove invalid values
+movies = movies[
+    (movies["runtime"] <= 300) &
+    (movies["vote_count"] >= 50) &
+    (movies["budget"] >= 0) &
+    (movies["revenue"] >= 0)]
+
+# Drop missing values in key columns
+movies = movies.dropna(subset=[
+    "vote_average",
+    "runtime",
+    "budget",
+    "revenue",
+    "year",
+    "genres"])
+
+# Extract primary genre
+movies["primary_genre"] = movies["genres"].str.split(",").str[0]
+
+# Save cleaned dataset to new CSV
+movies.to_csv("TMDB_movies_clean.csv", index = False)
+
+```
+
+### Load Clean Dataset
+
+```{r, echo = TRUE}
+# Read CSV
+movies <- read.csv("TMDB_movies_clean.csv")
+
+# Convert release date to Date
+movies$release_date <- as.Date(movies$release_date)
+
+# Create a column calculating profit
+movies <- movies %>%
+  mutate(
+    profit = revenue - budget,
+    month = month(release_date, label = TRUE),
+    weekday = wday(release_date, label = TRUE))
+
+```
+
+
+Seasonality
+=====================================
+
+<br>
+<br>
+
+### Movie Profitability by Month Released
+
+```{r}
+# Calculate monthly profit
+monthly_profit <- movies %>%
+  group_by(month) %>%
+  summarise(avg_profit = mean(profit, na.rm = TRUE))
+
+# Tooltip text
+monthly_profit <- monthly_profit %>%
+  mutate(tooltip_text = paste0(
+    "Month: ", month, "\n",
+    "Average Profit: ", dollar(avg_profit)))
+
+# Create ggplot
+month_plot <- ggplot(monthly_profit, 
+                     aes(x = month, 
+                         y = avg_profit, 
+                         text = tooltip_text)) +
+  geom_bar(
+    stat="identity", 
+    fill="#3c0694") +
+  scale_y_continuous(
+    labels = dollar_format(scale = 1e-6, suffix = "M")) +
+  labs(
+    title = "Movie Profitability by Month Released",
+    x = "Month",
+    y = "Average Profit (USD)"
+  ) +
+  theme_minimal()
+
+# Make it interactive and set height
+ggplotly(month_plot, tooltip = "text", height = 400)
+```
+
+<br>
+
+### Movie Profitability by Weekday Released
+
+```{r}
+# Create weekday subgroup and calculate mean profit
+midweek_profit <- movies %>%
+  group_by(weekday) %>%
+  summarise(
+    avg_profit = mean(profit, na.rm = TRUE),
+    movie_count = n())
+
+# Tooltip text
+midweek_profit <- midweek_profit %>%
+  mutate(tooltip_text = paste0(
+    "Day: ", weekday, "\n",
+    "Average Profit: ", dollar(avg_profit)))
+
+# Plot
+midweek_plot <- ggplot(midweek_profit, 
+       aes(
+         x = weekday, 
+         y = avg_profit, 
+         text = tooltip_text)) +
+  geom_bar(
+    stat="identity", 
+    fill="#b9348a") +
+  scale_y_continuous(
+    labels = dollar_format(scale = 1e-6, suffix = "M")) +
+  labs(
+    title = "Movie Profitability by Weekday Released",
+    x = "Release Day",
+    y = "Average Profit") +
+  theme_minimal()
+
+# Make it interactive and set height
+ggplotly(midweek_plot, tooltip = "text", height = 400)
+
+```
+
+<br>
+
+### Profit by Month and Weekday
+
+```{r}
+# Create seasonality subset (month + weekday) and calculate mean profit
+seasonality <- movies %>%
+  group_by(month, weekday) %>%
+  summarise(avg_profit = mean(profit, na.rm=TRUE))
+
+# Add tooltip text for hover
+seasonality <- seasonality %>%
+  mutate(tooltip_text = paste(
+    "Month: ", month,
+    "<br>Weekday: ", weekday,
+    "<br>Avg Profit: ", scales::dollar(avg_profit)))
+
+# Determine pretty breaks for legend
+legend_breaks <- pretty(seasonality$avg_profit, n = 5)
+
+# Plot
+seasonality_plot <- ggplot(seasonality, 
+       aes(
+         x = month, 
+         y = weekday, 
+         fill = avg_profit, 
+         text = tooltip_text)) +
+  geom_tile(color = "white") +
+  scale_fill_viridis_c(
+    option = "C", 
+    breaks = legend_breaks,
+    labels = scales::dollar_format(scale = 1e-6, suffix = "M"), 
+    name = "Avg Profit (USD)") +
+  labs(
+    title="Movie Profit Based on Release Day and Month",
+    x="Month Released",
+    y="Day of the Week Released") +
+  theme_minimal() + 
+  theme(panel.grid = element_line(color = "gray90"))
+
+# Make interactive
+ggplotly(seasonality_plot, tooltip = "text", height = 450)
+
+```
+
+<br>
+<br>
+
+### Plot Notes
+
+<br>
+
+ - The profit values are not adjusted for inflation but plotted data is grouped by all months or days of the week for all years of data collection so values are directly comparable to each other
+ 
+<br>
+<br>
+
+### Plot Take-Aways
+
+<br> 
+
+ - The average profit for movies released by week day over the course of time covered by this data set (1892 - 2023) is highest for movies released on Wednesdays
+    
+    `Note: This chart appears to show a significant profit advantage for releasing a movie in the middle of the week on a Wednesday but this is likely due to the bulk of views occurring during the opening weekend and Wednesday actually extending the window for views that contribute to opening revenue`
+
+ - The average profit for movies released by month over the course of time covered by this data set (1892 - 2023) is highest for movies released in June
+ 
+ - The intersection of this data shows that previously released movies were most profitable when released on a Wednesday and in the month of May.
+
+
+Industry Growth
+=====================================
+
+<br>
+<br>
+
+### Movies Released by Year and Genre
+
+```{r}
+# Aggregate movies released per year and calculate average rating
+movies_yearly <- movies %>%
+  group_by(year, primary_genre) %>%
+  arrange(desc(vote_average)) %>%
+  summarise(
+    movie_count = n(),
+    avg_rating = mean(vote_average, na.rm = TRUE),
+    title = str_c(head(`title`, 5), collapse = "<br>\t"),
+    .groups = "drop")
+
+top_genres <- movies %>%
+  count(primary_genre, sort = TRUE) %>%
+  slice_head(n = 6) %>%
+  pull(primary_genre)
+
+movies_yearly <- movies_yearly %>%
+  filter(primary_genre %in% top_genres)
+
+# Plot
+p1 <- ggplot(movies_yearly, aes(x = year, y = movie_count)) +
+  geom_point(
+    aes(
+      size = avg_rating,
+      color = primary_genre,
+      text = paste(
+        "Year:", year,
+        "<br>Genre:", primary_genre,
+        "<br>Avg Rating:", round(avg_rating,2),
+        "<br>Movies Released in Genre:", movie_count,
+        "<br>Top Titles:<br>", title)),
+    alpha = 0.7) +
+  
+  scale_color_manual(values = c(
+    "Action" = "#D00000", 
+    "Animation" = "#F26DF9", 
+    "Comedy" = "#FFB703", 
+    "Drama" = "#7209b7", 
+    "Horror" = "#03045e", 
+    "Thriller" = "#00798c")) +
+  
+  scale_size(range = c(0.1, 5)) +
+  scale_x_continuous(n.breaks = 20) +      # 20 ticks along x-axis (year)
+  scale_y_continuous(n.breaks = 15) +      # 15 ticks along y-axis (# movies)
+  labs(
+    title = "Movies Released Per Year by Genre",
+    subtitle = "Top 6 genres",
+    x = "Year",
+    y = "Number of Movies",
+    size = "Average Rating",
+    color = "Primary Genre") +
+  theme_minimal()
+
+ggplotly(p1, tooltip = "text", height = 440)
+
+```
+
+<br>
+<br>
+
+### Graph Notes
+
+<br>
+
+ - Each point is a genre (indicated by color) summary for a given year including the number of movies released that year for the genre and the average rating for those movies (reflected in the size of the point) and the top five titles in the genre released for that year
+ - Movies are grouped by year and primary genre and only the top 6 genres by count are selected
+ - Average ratings are calculated based on the movies released that year for that genre
+ - The top 5 titles are selected by sorting the ratings of the grouped genre and year and isolating the top 5
+ - The last decade of this trend (2020-2023) consists of incomplete data due to the timing of this data collection and the decrease in values we see at the end of this trend is not consistent with what we would expect
+
+<br>
+
+### Graph Take-Aways
+
+<br>
+
+ - The number of movies released yearly increases rapidly after the 1990s
+ - Comedy and Drama are consistently the most released movies each year while Thriller and Animated movies tend to be released the fewest
+ - Horror movies tend to have the lowest average ratings by year while Animated movies tend to have the highest 
+
+<br>
+
+Profitability
+=====================================
+
+<br>
+<br>
+
+### Top Studios by ROI
+
+```{r}
+# Calculate proportional profit in a new column (return on investment metric)
+movies <- movies %>%
+  mutate(
+    profit_ratio = ifelse(budget > 0, profit / budget, NA_real_), 
+    main_studio = str_split(production_companies, ",") %>% 
+      sapply(`[`,1))
+
+# Extract primary studio
+movies <- movies %>%
+  mutate(main_studio = str_split(production_companies, ",") %>%
+           sapply(`[`,1))
+
+# Filter out profitless movies, group by main studio, count movies released and calculate the average ROI
+studio_roi <- movies %>%
+  filter(!is.na(profit_ratio)) %>%
+  group_by(main_studio) %>%
+  summarise(
+    movie_count = n(),
+    avg_roi = mean(profit_ratio, na.rm = TRUE),
+
+# Identify largest ROI movies from the studio
+    top_movie = title[which.max(profit_ratio)],
+    top_budget = budget[which.max(profit_ratio)],
+    top_revenue = revenue[which.max(profit_ratio)],
+    top_roi = max(profit_ratio, na.rm = TRUE), 
+    top_genre = primary_genre[which.max(profit_ratio)],
+    .groups = "drop") %>%
+  
+# Isolate top 10 ROI movies
+  arrange(desc(avg_roi)) %>%
+  slice(1:10)
+
+# Tooltip
+studio_roi <- studio_roi %>%
+  mutate(
+    tooltip_text = paste(
+      "<b>", main_studio, "</b>",
+      "<br>Movies Released:", movie_count,
+      "<br>Average ROI:", scales::percent(avg_roi, accuracy = 0.1),
+      "<br><br><b>Highest ROI Movie</b>",
+      "<br>Title:", top_movie,
+      "<br>Genre:", top_genre,
+      "<br>Budget:", scales::dollar(top_budget),
+      "<br>Revenue:", scales::dollar(top_revenue),
+      "<br>ROI:", scales::percent(top_roi, accuracy = 0.1)))
+
+# Plot
+studio_plot <- ggplot(
+  studio_roi,
+  aes(
+    x = reorder(main_studio, avg_roi),
+    y = avg_roi, 
+    text = tooltip_text)) +
+  
+  geom_bar(
+    stat = "identity", 
+    fill = "#679436") +
+  
+  coord_flip() +
+  scale_y_log10(labels = scales::percent_format(accuracy = 1)) +
+  
+  labs(
+    title = "Top Studios by Average Return on Investment (ROI)",
+    x = "Studio",
+    y = "ROI (Profit / Budget) (log scale)") +
+  theme_minimal()
+
+ggplotly(studio_plot, tooltip = "text", height = 440)
+
+```
+
+
+### Top Movies by ROI
+
+```{r}
+# Calculate proportional profit in a new column (return on investment metric)
+movies <- movies %>%
+  mutate(
+    profit_ratio = ifelse(budget > 0, profit / budget, NA_real_))
+
+# Filter out profitless movies, isolate the top 10 movies, create tooltip
+top_movies_roi <- movies %>%
+  filter(!is.na(profit_ratio)) %>%
+  arrange(desc(profit_ratio)) %>%
+  slice(1:10) %>%
+  mutate(
+    tooltip_text = paste(
+      "<b>", title, "</b>",
+      "<br>Year:", year,
+      "<br>Genre:", primary_genre,
+      "<br>Budget:", scales::dollar(budget),
+      "<br>Revenue:", scales::dollar(revenue),
+      "<br>Profit:", scales::dollar(profit),
+      "<br>ROI:", scales::percent(profit_ratio, accuracy = 0.1)))
+
+# Plot
+movie_plot <- ggplot(
+  top_movies_roi,
+  aes(
+    x = reorder(title, profit_ratio),
+    y = profit_ratio,
+    text = tooltip_text)) +
+  geom_bar(
+    stat = "identity", 
+    fill = "#a5be00") +
+  scale_y_log10(labels = scales::percent_format(accuracy = 1)) +
+  coord_flip() +
+  labs(
+    title = "Top Movies by ROI",
+    x = "Movie",
+    y = "Proportional Profit (Profit / Budget)") +
+  theme_minimal()
+
+ggplotly(movie_plot, tooltip = "text", height = 440)
+
+```
+
+
+### Average ROI by Genre
+
+```{r eval=FALSE}
+# Sort to isolate top 5 occurring genres
+top_genres <- movies %>%
+  count(primary_genre, sort = TRUE) %>%
+  slice(1:5) %>%
+  pull(primary_genre)
+
+# Calculate average ROI by genre and tooltip
+genre_roi <- movies %>%
+  filter(primary_genre %in% top_genres, budget > 0) %>%
+  group_by(primary_genre) %>%
+  summarise(
+    avg_roi = mean(profit / budget, na.rm = TRUE),
+    movie_count = n(),
+    top_movie = title[which.max(profit / budget)],
+    top_budget = budget[which.max(profit / budget)],
+    top_revenue = revenue[which.max(profit / budget)],
+    top_roi = max(profit / budget, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    tooltip_text = paste(
+      "<b>", primary_genre, "</b>",
+      "<br>Number of Movies:", movie_count,
+      "<br>Average ROI:", scales::percent(avg_roi, accuracy = 0.1),
+      "<br><br><b>Highest ROI Movie</b>",
+      "<br>Title:", top_movie,
+      "<br>Budget:", scales::dollar(top_budget),
+      "<br>Revenue:", scales::dollar(top_revenue),
+      "<br>ROI:", scales::percent(top_roi, accuracy = 0.1))
+  )
+
+# Plot interactive bar chart
+genre_roi_plot <- ggplot(genre_roi,
+                         aes(x = reorder(primary_genre, avg_roi),
+                             y = avg_roi,
+                             text = tooltip_text,
+                             fill = avg_roi)) +   # Fading fill
+  geom_col() +
+  scale_fill_viridis_c(option = "C", direction = -1, labels = scales::percent_format(accuracy = 1)) +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1)) +
+  labs(
+    title = "Average ROI by Top 5 Genres",
+    x = "Genre",
+    y = "ROI (Profit / Budget)",
+    fill = "ROI"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# Make interactive
+ggplotly(genre_roi_plot, tooltip = "text", height = 440)
+
+```
+
+```{r}
+# Isolate top 8 movie genres by occurrence
+top_genres_list <- movies %>%
+  count(primary_genre, sort = TRUE) %>%
+  slice_head(n = 8) %>% 
+  pull(primary_genre)
+
+# Filter out any budgetless movies and calculate ROI
+roi_data <- movies %>%
+  filter(primary_genre %in% top_genres_list) %>%
+  filter(budget > 0) %>%
+  mutate(roi = (revenue - budget) / budget) %>%
+  filter(is.finite(roi), roi > -1) %>%
+  # Caps at 20x for visualization but keeps real ROI for tooltip
+  mutate(roi_capped = pmin(roi, 20))
+
+# Plot
+roi_p <- ggplot(roi_data, aes(x = reorder(primary_genre, roi, median), 
+                               y = roi_capped,
+                               text = paste("Title:", title,
+                                            "<br>ROI:", percent(roi, accuracy = 0.1),
+                                            "<br>Budget:", dollar(budget)))) +
+  geom_jitter(color = "skyblue", alpha = 0.2, width = 0.2) +
+  geom_boxplot(fill = NA, color = "mediumpurple", outlier.shape = NA) +
+  geom_hline(yintercept = 1, color = "firebrick", linetype = "dashed") +
+  scale_y_continuous(labels = label_number(suffix = "x")) +
+  coord_flip() + 
+  labs(
+    title = "Risk vs Reward: ROI by Genre",
+    x = "Primary Genre",
+    y = "ROI (Multiple of Budget) - Capped at 20x") +
+  theme_minimal()
+
+ggplotly(roi_p, tooltip = "text")
+```
+
+### Plot Notes
+
+ - Proportional profit (profit relative to budget) was used to evaluate return on investment because:
+      - Older movies naturally have smaller nominal profits due to inflation
+      - Huge-budget blockbusters dominate absolute profit charts (biased)
+      - Profit / Budget normalizes across time and production scale
+
+### Plot Take-Aways
+
+ - Large ROI is not exclusive to Large Studios
+    - Studios with the highest ROI aren’t necessarily making the most money overall. Smaller or niche studios can achieve huge profits relative to their budgets.
+ - There is a very wide variation in ROI
+    - Some movies massively outperform their budgets (more common in the older movies in the plot) while most fall closer to the "breakeven" point
+    - Horror often has the highest median ROI despite low budgets. It is the "lowest risk" genre for studios.
+ - The top 3 ROI movies are in the Drama and Comedy genres which have the largest genre average ROI values
+ - Top studios appear to rely on a few massive hits rather than produce consistently with smaller returns
+
+
+Ratings
+=====================================
+
+<br>
+<br>
+
+### Budget vs Rating: Does Spending More Improve Ratings?
+
+```{r}
+# Budget vs Rating
+budget_plot <- movies %>%
+  filter(
+    budget > 0, 
+    vote_count >= 50) %>%
+  ggplot(aes(
+    x = budget, 
+    y = vote_average, 
+             # Tooltip
+             text = paste("Title:", title, 
+                          "<br>Budget:", scales::dollar(budget), 
+                          "<br>Rating:", vote_average))) +
+  geom_point(alpha = 0.3, color = "grey40") +
+  geom_smooth(aes(text = NULL), method = "lm", color = "firebrick") +
+  scale_x_log10(labels = scales::label_dollar()) +
+  labs(
+    title = "Budget vs IMDb Rating", 
+    x = "Budget (Log Scale)", 
+    y = "Rating") +
+  theme_minimal()
+
+ggplotly(budget_plot, tooltip = "text")
+
+```
+
+<br>
+
+### Runtime vs Rating: Do Longer Movies Score Better?
+
+```{r}
+# Filter out potential runtime outliers
+runtime_plot <- movies %>%
+  filter(
+    runtime > 60, 
+    runtime <= 360, 
+    vote_count >= 50) %>%
+  ggplot(aes(
+    x = runtime, 
+    y = vote_average,
+             # Tooltip
+             text = paste("Title:", title, 
+                          "<br>Runtime:", runtime, "mins",
+                          "<br>Rating:", vote_average))) +
+  geom_jitter(alpha = 0.3, color = "steelblue", width = 0.5) +
+  geom_smooth(aes(text = NULL), method = "loess", color = "darkgreen") +
+  labs(
+    title = "Runtime vs IMDb Rating", 
+    x = "Runtime (Minutes)", 
+    y = "Rating") +
+  theme_minimal()
+
+ggplotly(runtime_plot, tooltip = "text")
+
+```
+
+### Plot Take-Aways
+
+ - Money can't buy ratings. The plotted trendline shows no correlation between budget and ratings. In other words, a 200M "blockbuster" is just as likely to get an average 6.0 rating as a smaller 5M indie film
+    - Higher budgets can increase technology available or put bigger actors on a project but they don't guarantee better storytelling or critic favoritism
+    - Note, the cluster of movies with low budget but comparable rating shows that a "low-budget, high-quality" movie is not a rare occurrence 
+
+ - Movie length does not correpond to movie quality
+    - The majority of movies fall into a 90-120 minute "sweet-spot" that seems to be considered industry standard perhaps based on theater restrictions, cost, or audience preferences.
+    - There is a slight uptick in ratings for very long movies but this a niche occurrence. There are epic franchises or prestigious directors like Scorsese, Nolan, or Peter Jackson who make epically long movies like the Lord of the Ring trilogy that have an audience base.
+    
+Given the horizontal nature of the trend lines, audience satisfaction is driven by creative quality, not technical scale (budget) or length (runtime).
+
+
+Conclusion
+=====================================
+
+<br>
+<br>
+
+### Key Insights from the TMDB Dataset
+
+ - Seasonality
+    - Releasing on a Wednesday provides a significant competitive edge, likely by extending the critical "opening window" into a five-day weekend
+    - The May-June window remains the best for high-profit releases, aligning with the start of the global summer blockbuster season
+    
+ - Ratings
+    - There is no strong correlation between production budget and IMDb ratings. Massive investment in visual effects or celebrity talent does not guarantee critical or audience approval.
+    - Mid-budget films (10M – 50M) often represent the "sweet spot" for studios, offering the best balance of lower financial risk and high audience ratings.
+    - Film runtimes have stabilized around 90–120 minutes. Beyond this, there is no meaningful "rating boost" for longer movies, suggesting that tight editing and narrative pacing are more valuable to viewers than sheer length.
+    
+ - Profitability / ROI
+    - High-revenue genres like Action and Adventure require the largest budgets, which can ironically lead to lower individual ROI.
+    - Genres such as Horror and Animation consistently deliver higher average profit margins relative to their production costs.
+
+Final Recommendation: To maximize both financial return and audience acclaim, the data supports a strategy focused on mid-budget productions, targeted mid-week summer releases, and an emphasis on narrative quality over excessive runtime or inflated production spending
+
+Potential Next Steps:
+ - Analysis of "efficient" movie qualities

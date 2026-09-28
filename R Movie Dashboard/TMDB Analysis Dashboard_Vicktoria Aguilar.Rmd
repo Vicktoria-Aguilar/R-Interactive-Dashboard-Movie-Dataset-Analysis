@@ -1,0 +1,473 @@
+---
+title: "Final Project TMDB Movie Dataset Analysis: Trends in Movie Profitability and Ratings"
+author: "Vicktoria Aguilar"
+date: "03/12/2026"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: scroll
+    theme: cosmo
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(dplyr)
+library(tidyverse)
+library(readxl)
+library(lubridate)
+library(janitor)
+library(scales)
+library(stringr)
+library(plotly)
+library(htmlwidgets)
+library(reticulate)
+```
+
+
+Overview
+=====================================
+
+### Dataset
+
+```markdown
+Dataset: **Full TMDB Movies Dataset 2024 (1M Movies)**
+
+Source:  
+https://www.kaggle.com/datasets/asaniczka/tmdb-movies-dataset-2023-930k-movies
+
+The TMDb dataset contains:
+
+- Movie titles
+- Release dates
+- Ratings
+- Revenue & budget
+- Genres
+- Studios
+
+Total movies analyzed: **~1,000,000**
+
+Goal: Explore **profitability, trends, and rating behavior** in the movie industry.
+
+```
+
+
+```markdown
+Data Cleaning
+=====================================
+
+```
+### Python Preprocessing
+
+This was a particularly large data set (1 million rows of data) so python was employed to clean the data and output a "clean" CSV file containing the cleaned data set to be used in R to analyze the data in the following plots
+
+```{python eval = FALSE, include = TRUE}
+# Import Python libraries
+import pandas as pd
+import numpy as np
+
+# Load dataset
+movies = pd.read_csv("TMDB_movie_dataset_v11.csv", low_memory=False)
+
+# Standardize column names (lowercase)
+movies.columns = movies.columns.str.lower()
+
+# Remove duplicates using movie id
+movies = movies.drop_duplicates(subset="id")
+
+# Convert column dates to release date
+movies["release_date"] = pd.to_datetime(movies["release_date"], errors="coerce")
+movies["year"] = movies["release_date"].dt.year
+
+numeric_cols = ["vote_average","vote_count","revenue","budget","runtime"]
+
+for col in numeric_cols:
+    movies[col] = pd.to_numeric(movies[col], errors="coerce")
+
+# Create profit column
+movies["profit"] = movies["revenue"] - movies["budget"]
+
+# Keep only released movies
+movies = movies[movies["status"] == "Released"]
+
+# Remove invalid values
+movies = movies[
+    (movies["runtime"] <= 300) &
+    (movies["vote_count"] >= 50) &
+    (movies["budget"] >= 0) &
+    (movies["revenue"] >= 0)]
+
+# Drop missing values in key columns
+movies = movies.dropna(subset=[
+    "vote_average",
+    "runtime",
+    "budget",
+    "revenue",
+    "year",
+    "genres"])
+
+# Extract primary genre
+movies["primary_genre"] = movies["genres"].str.split(",").str[0]
+
+# Save cleaned dataset to new CSV
+movies.to_csv("TMDB_movies_clean.csv", index = False)
+
+```
+
+Column
+-------------------------------------
+
+### Load Clean Dataset
+
+```{r}
+# Read CSV
+movies <- read.csv("TMDB_movies_clean.csv")
+
+# Convert release date to Date
+movies$release_date <- as.Date(movies$release_date)
+
+# Create a column calculating profit
+movies <- movies %>%
+  mutate(
+    profit = revenue - budget,
+    month = month(release_date, label = TRUE),
+    weekday = wday(release_date, label = TRUE))
+
+```
+
+
+Seasonality: Release Timing & Profit
+=====================================
+
+Column
+-------------------------------------
+
+### Profit by Month
+
+When is the best time time of the year to release a movie? What months have the highest profits for movies released?
+
+```{r}
+# Create monthly subsets and calculate the averages 
+monthly_profit <- movies %>%
+  group_by(month) %>%
+  summarise(avg_profit = mean(profit, na.rm = TRUE))
+
+# Plot
+monthly_profit_plot <- ggplot(monthly_profit, aes(x = month, y = avg_profit)) +
+  geom_bar(stat="identity", fill="purple") +
+  scale_y_continuous(labels = dollar_format(scale = 1e-6, suffix = "M")) +
+  labs(
+    title = "Average Movie Profit by Month",
+    x = "Month",
+    y = "Average Profit (USD)") +
+  theme_minimal()
+
+htmlwidgets::saveWidget(
+  ggplotly(monthly_profit_plot),
+  "profit_by_month.html",
+  selfcontained = TRUE)
+
+monthly_profit_plot
+# Make horizontal lines thicker
+
+```
+
+**The peak profit months are June (flanked by May and July) with a secondary peak in December. This correlates with the summer blockbuster and holiday seasonal viewing that is typical**
+
+Column
+-------------------------------------
+
+### Profit by Weekday
+
+How granular is this release time effect? Is there any difference based on what day of the week the movie is released on?
+
+```{r}
+# Create weekday subgroup and calculate mean profit
+midweek_profit <- movies %>%
+  filter(weekday %in% c("Mon","Tue","Wed","Thu","Fri","Sat","Sun")) %>%
+  group_by(weekday) %>%
+  summarise(avg_profit = mean(profit, na.rm=TRUE),
+            movie_count = n())
+
+# Plot
+ggplot(midweek_profit, 
+       aes(
+         x=weekday, 
+         y=avg_profit)) +
+  geom_bar(stat="identity", fill="pink") +
+  scale_y_continuous(labels = dollar_format(scale = 1e-6, suffix = "M")) +
+  labs(
+    title="Average Profit of Movie Releases by Week Day ",
+    x="Release Day",
+    y="Average Profit") +
+  theme_minimal()
+
+
+```
+
+**This chart appears to show a significant profit advantage for releasing a movie in the middle of the week on a Wednesday but this is likely due to the bulk of views occurring during the opening weekend and Wednesday actually extending the window for views that contribute to opening revenue**
+
+Column
+-------------------------------------
+
+### Profit by Month and Weekday
+
+```{r}
+# Create seasonality subset (month + weekday) and calculate mean profit
+seasonality <- movies %>%
+  group_by(month, weekday) %>%
+  summarise(avg_profit = mean(profit, na.rm=TRUE))
+
+# Plot
+ggplot(seasonality, 
+       aes(
+         x = month, 
+         y = weekday, 
+         fill = avg_profit)) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  labs(
+    title="Movie Profit Based on Release Day and Month",
+    x="Month Released",
+    y="Day of the Week Released") +
+  theme_minimal()
+```
+
+
+Industry Growth
+=====================================
+
+Column
+-------------------------------------
+
+### Movies Released by Year and Genre
+
+```{r}
+# Aggregate movies released per year and calculate average rating
+movies_yearly <- movies %>%
+  group_by(year, primary_genre) %>%
+  arrange(desc(vote_average)) %>%
+  summarise(
+    movie_count = n(),
+    avg_rating = mean(vote_average, na.rm = TRUE),
+    title = str_c(head(`title`, 5), collapse = "<br>\t"),
+    .groups = "drop")
+
+top_genres <- movies %>%
+  count(primary_genre, sort = TRUE) %>%
+  slice_head(n = 6) %>%
+  pull(primary_genre)
+
+movies_yearly <- movies_yearly %>%
+  filter(primary_genre %in% top_genres)
+
+# Plot
+p1 <- ggplot(movies_yearly, aes(x = year, y = movie_count)) +
+  geom_point(
+    aes(
+      size = avg_rating,
+      color = primary_genre,
+      text = paste(
+        "Year:", year,
+        "<br>Genre:", primary_genre,
+        "<br>Avg Rating:", round(avg_rating,2),
+        "<br>Movies Released in Genre:", movie_count,
+        "<br>Top Titles:<br>", title)),
+    alpha = 0.7) +
+  scale_size(range = c(0.1, 5)) +
+  scale_x_continuous(n.breaks = 20) +      # 20 ticks along x-axis (year)
+  scale_y_continuous(n.breaks = 15) +      # 15 ticks along y-axis (# movies)
+  labs(
+    title = "Movies Released Per Year by Genre",
+    subtitle = "Top 6 genres",
+    x = "Year",
+    y = "Number of Movies",
+    size = "Average Rating",
+    color = "Primary Genre") +
+  theme_minimal()
+
+ggplotly(p1, tooltip = "text")
+```
+
+**The film industry has expanded and only grown in recent years as technology improves and you can see that it still continues to rise, especially with an increase in movies released directly to streaming platforms**
+
+**This plot groups year and primary genre to count the number of movies released that year for the top six genres and calculates the average rating of these movies as well as lists the top five titles for that genre for that year.**
+
+**The trend that emerges is that the number of movies released is dominated largely over time by drama and comedy with thriller movies releasing the fewest movies each year but rating fairly consistently in the mid 6s**
+
+**Note the last bin graphed (2020 - 2023 decade) is only three years which is why the values appear so low - they do not include more recent data or all the data that will be generated this decade. The growth is expected to continue as projected**
+
+# Profitability
+=====================================
+
+### Top Studios by Profit
+
+```{r}
+# Extract primary studio from studio list
+movies <- movies %>%
+  mutate(main_studio = str_split(production_companies, ",") %>% 
+           sapply(`[`,1))
+
+# Compute profits, sort in descending order, then isolate the top 10 studios
+studio_profit <- movies %>%
+  group_by(main_studio) %>%
+  summarise(total_profit = sum(profit, na.rm=TRUE)) %>%
+  arrange(desc(total_profit)) %>%
+  slice(1:10)
+
+# Plot
+ggplot(studio_profit, 
+       aes(
+         x = reorder(main_studio,total_profit), 
+         y = total_profit)) +
+  geom_bar(
+    stat = "identity", 
+    fill = "purple") + 
+  scale_y_continuous(labels = dollar_format(scale = 1e-9, suffix = "B")) +
+  coord_flip() +
+  labs(
+    title = "Top Studios by Total Profit",
+    x = "Studio",
+    y = "Total Profit") +
+  theme_minimal()
+
+```
+
+### Most profitable Movies
+
+```{r}
+# Isolate top 10 movies by profit
+top_movies <- movies %>%
+  arrange(desc(profit)) %>%
+  slice(1:10)
+
+# Plot
+ggplot(top_movies, aes(x=reorder(title,profit), y=profit)) +
+  geom_bar(stat="identity", fill="goldenrod") +
+  scale_y_continuous(labels = dollar_format(scale = 1e-9, suffix = "B")) +
+  coord_flip() +
+  labs(
+    title="Top 10 Most Profitable Movies",
+    x="Movie",
+    y="Profit (USD)") +
+  theme_minimal()
+
+```
+
+Genre Profitability
+=====================================
+
+Column
+-------------------------------------
+
+### Average Profit by Genre
+
+```{r}
+# Isolate the top 5 most common genres (highest released count)
+top_genres <- movies %>%
+  count(primary_genre, sort=TRUE) %>%
+  slice(1:5)
+
+# Calculate avg genre profit
+genre_profit <- movies %>%
+  filter(primary_genre %in% top_genres$primary_genre) %>%
+  group_by(primary_genre) %>%
+  summarise(avg_profit = mean(profit, na.rm=TRUE))
+
+# Plot Average Profit of Top 5 Genres
+ggplot(genre_profit, 
+       aes(
+         x = reorder(primary_genre, avg_profit), 
+         y = avg_profit)) +
+  geom_bar(
+    stat = "identity", 
+    fill = "tomato") +
+  scale_y_continuous(
+    labels = dollar_format(scale = 1e-6, suffix = "M")) +
+  labs(
+    title = "Average Profit by Top 5 Genres",
+    x = "Genre",
+    y = "Average Profit") +
+  theme_minimal()
+
+```
+
+Column
+-------------------------------------
+
+### Profit Distribution by Genre
+
+```{r}
+# Profit distribution by genre
+ggplot(movies %>% 
+         filter(primary_genre %in% top_genres$primary_genre),
+       aes(
+         x = primary_genre, 
+         y = profit)) +
+  geom_boxplot(
+    fill="skyblue") +
+  scale_y_continuous(
+    labels = dollar_format(scale = 1e-9, suffix = "B")) + 
+  labs(
+    title="Profit Distribution by Genre",
+    x = "Genre",
+    y = "Profit") +
+  theme_minimal()
+```
+
+
+
+**As seen in the Average Profit by Top 5 Genres plot, the most profitable movies on average are action movies followed closely by animation. The second plot shows a distribution of profit by genre which does well to highlight the kind of risk associated with producing these genres (you may make no profit - highlighted by the points balling below the 0 "breakeven" line for each genre. Action movies may have the highest profit but they also show the widest distribution with a considerable amount of points resulting in a net loss for production. Comedy appears to have the tightest distribution with most values falling close together with few outliers**
+
+# Ratings
+
+Budget vs Rating
+=====================================
+
+Column
+-------------------------------------
+
+### Does Spending More Improve Ratings?
+
+```{r}
+# Budget vs Rating
+movies %>%
+  filter(budget > 0, vote_count >= 50) %>%
+  ggplot(aes(x = budget, y = vote_average, color = primary_genre)) +
+  geom_point(alpha = 0.4) +
+  scale_x_log10(labels = scales::dollar) +
+  labs(
+    title = "Budget vs IMDb Rating",
+    x = "Budget (log scale)",
+    y = "IMDb Rating") +
+  theme_minimal() -> p3
+
+ggplotly(p3)
+
+```
+
+Runtime vs Rating
+=====================================
+
+Column
+-------------------------------------
+
+### Do Longer Movies Score Better?
+
+```{r}
+# Runtime vs Rating
+movies %>%
+  filter(runtime <= 240, vote_count >= 50) %>%
+  ggplot(aes(x = runtime, y = vote_average)) +
+  geom_point(alpha = 0.3, color = "steelblue") +
+  geom_smooth(method = "loess", color = "darkgreen") +
+  labs(
+    title = "Runtime vs IMDb Rating",
+    x = "Runtime (minutes)",
+    y = "IMDb Rating"
+  ) +
+  theme_minimal()
+```
+
+**With a correlation of 0.2412278, there is no strong relationship between runtime and rating which is especially surprising in long runtime cases**
+
