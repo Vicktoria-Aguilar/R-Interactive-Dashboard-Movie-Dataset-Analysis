@@ -11,7 +11,7 @@ View Interactive Dashboard · View Source Code
 
 This project explores trends in the global film industry using a large-scale TMDB movie dataset containing approximately one million records before data cleaning.
 
-Using Python for data preprocessing and R for statistical analysis and visualization, I investigated relationships between movie release timing, production budgets, profitability, genres, studio performance, and audience ratings.
+Using Python for data preprocessing and R for analysis and visualization, I investigated relationships between movie release timing, production budgets, profitability, genres, studio performance, and audience ratings.
 
 The goal was to transform a large, heterogeneous dataset into an accessible analytical dashboard that communicates industry trends and supports exploratory investigation.
 
