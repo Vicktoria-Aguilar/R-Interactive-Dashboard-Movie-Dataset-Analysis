@@ -1,117 +1,144 @@
-# TMDB Movie Dataset Analysis
+# TMDB Movie Dashboard
 ## Exploring Movie Profitability, Industry Trends, and Audience Ratings with Python and R
 
 **Author:** Vicktoria Aguilar  
 **Tools:** Python, R, ggplot2, dplyr, tidyverse, lubridate  
 **Project:** Data Analytics Visualization  
 
-## [View Interactive Dashboard]("https://9slkla-vicktoria0aguilar.shinyapps.io/tmdb_dashboard/") · View Source Code
+## [![Launch Dashboard](https://img.shields.io/badge/Launch-Live%20Dashboard-blue?style=for-the-badge&logo=r)](https://9slkla-vicktoria0aguilar.shinyapps.io/tmdb_dashboard/)
 
-## Project Overview
+### Interactive Dashboard
 
-This project explores trends in the global film industry using a large-scale TMDB movie dataset containing approximately one million records before data cleaning.
+The dashboard includes six interactive sections:
 
-Using Python for data preprocessing and R for analysis and visualization, I investigated relationships between movie release timing, production budgets, profitability, genres, studio performance, and audience ratings.
+- **Overview:** Explore the dataset using year and genre filters, with summary metrics for movie counts, audience ratings, budgets, and ROI.
+- **Seasonality:** Compare average movie profitability by release month and weekday, including their intersection.
+- **Industry Trends:** Examine annual movie release counts and audience ratings across frequently represented genres.
+- **Profitability:** Explore production-budget ROI across studios, movies, and genres.
+- **Ratings:** Investigate relationships between production budgets, runtime, and TMDB audience ratings.
+- **Methodology:** Review data preparation, analytical definitions, assumptions, and limitations.
 
-The goal was to transform a large, heterogeneous dataset into an accessible analytical dashboard that communicates industry trends and supports exploratory investigation.
+Interactive filters allow users to explore different year ranges and primary genres throughout the dashboard.
 
 ### Key Questions
-- **Seasonality:** How are movie profitability patterns associated with release month and weekday?  
-- **Industry Growth:** How have movie releases and audience ratings changed across genres and years?  
-- **Profitability:** How does return on investment (ROI) vary by genre, movie, and studio?  
-- **Audience Ratings:** What relationships exist between production budget, runtime, and audience ratings?  
 
-### Dashboard
-
-The analysis is organized into five sections:
-
-**1. Seasonality:** Movie profitability by release month and weekday, including their intersection.  
-**2. Industry Growth:** Annual movie releases and average ratings across leading genres, with representative top-rated titles.  
-**3. Profitability:** Studio and movie ROI comparisons, alongside average ROI by genre.  
-**4. Ratings:** Exploratory relationships between production budget, runtime, and audience ratings.  
-**5. Conclusions:** Summary of observed patterns, limitations, and potential directions for further analysis.  
+- **Seasonality:** How does observed movie profitability vary by release month and weekday?
+- **Industry Trends:** How have movie release volumes and audience ratings changed over time and across genres?
+- **Profitability:** How does return on investment (ROI) vary across movies, genres, and production studios?
+- **Audience Ratings:** What relationships are observable between production budgets, runtime, and audience ratings?
 
 ### Data Source
 
-Dataset: [TMDB Movies Dataset – Kaggle]("https://www.kaggle.com/datasets/asaniczka/tmdb-movies-dataset-2023-930k-movies")
+**Dataset:** TMDB Movies Dataset – Kaggle
 
-The dataset contains movie metadata, including titles, release dates, genres, ratings, production budgets, revenue, runtime, and studios.
+The dataset contains movie metadata, including titles, release dates, genres, audience ratings, production budgets, revenue, runtime, and production companies.
 
-Approximately one million records were initially considered. The dataset was cleaned and filtered to support the analyses.
+Approximately one million records were initially considered. The data were cleaned and filtered to support the analyses, with the resulting dataset used in the interactive R Shiny application.
 
-### Methodology
-#### 1. Data Preprocessing: Python and pandas were used to prepare the raw dataset for analysis
+## Methodology
+
+### 1. Data Preprocessing — Python
+
+Python and pandas were used to prepare the raw dataset for analysis.
 
 Preprocessing included:
 
-- Standardizing column names
+- Standardizing column names and data types
 - Removing duplicate movie IDs
 - Parsing release dates and extracting release years
 - Converting numerical variables to appropriate types
-- Calculating movie profit as revenue minus budget
+- Calculating movie profit as revenue minus production budget
 - Filtering for released movies and valid numerical records
+- Applying runtime and vote-count thresholds
 - Removing records with missing values in key analytical fields
-- Extracting primary genre for genre-level comparisons
+- Extracting primary genre and production company information for grouped comparisons
 - Exporting the cleaned dataset to CSV for analysis in R
 
-#### 2. Exploratory Data Analysis: The cleaned dataset was analyzed using R, with packages including tidyverse, dplyr, ggplot2, and lubridate
+### 2. Exploratory Data Analysis — R
+
+The cleaned dataset was analyzed using R and packages including tidyverse, dplyr, ggplot2, lubridate, and scales.
 
 Analyses explored:
 
-- Aggregated profitability by release month and weekday
-- Annual release volume and average ratings by primary genre
-- Movie and studio ROI
-- Relationships between budget, runtime, and audience ratings
+- Average profitability by release month and weekday
+- Annual movie release volume and audience ratings by primary genre
+- Movie and studio production-budget ROI
+- Median ROI comparisons across genres
+- Relationships between production budgets, runtime, and audience ratings
 
-#### 3. Visualization and Reporting
+### 3. Interactive Visualization — Shiny and Plotly
 
-Visualizations were developed to communicate trends across the dataset, including comparisons of profitability, genre-level patterns, and audience ratings.
+The final dashboard was developed using R Shiny, bslib, ggplot2, and Plotly.
 
-The final HTML report combines visualizations, methodological notes, and interpretations in a single presentation.
+Interactive features include:
 
-### Selected Findings
+- Year-range and primary-genre filters
+- Reactive summary metrics
+- Interactive visualizations and hover details
+- Genre, studio, and movie-level comparisons
+- Methodology and limitations documentation
 
-The exploratory analysis identified several patterns in the dataset:
+The dashboard is deployed using shinyapps.io.
 
-- **Release timing:** Wednesday releases and May–June releases had higher average profitability in the analyzed data. These are observational patterns and do not establish that release timing causes higher profits.
-- **Industry growth:** Annual movie release counts increased substantially in the later decades represented in the dataset, with Comedy and Drama frequently appearing among the most represented genres.
-- **ROI:** Profitability relative to budget varied substantially across movies and genres. Horror films showed comparatively high median ROI in the analyzed sample.
-- **Audience ratings:** Budget and runtime did not show strong apparent relationships with audience ratings in the visualized data.
+## Selected Exploratory Findings
 
-These findings are exploratory and depend on the dataset's coverage, filtering decisions, and reporting conventions.
+The initial exploratory analysis identified several patterns in the dataset:
 
-### Limitations
+- **Release timing:** Wednesday releases and May–June releases exhibited higher average profitability in the analyzed sample. These are observational differences and do not establish that release timing causes higher profits.
+- **Industry trends:** Annual movie release counts increased substantially in later decades represented in the dataset. Comedy and Drama were frequently among the most represented primary genres.
+- **ROI:** Production-budget ROI varied substantially across movies and genres. Horror films exhibited comparatively high median ROI in the initial analysis.
+- **Audience ratings:** Production budget and runtime showed no strong apparent relationships with audience ratings in the visualized sample.
+
+These findings are descriptive and depend on dataset coverage, filtering decisions, and reporting conventions. They should not be interpreted as causal effects or universal industry patterns.
+
+## Analytical Definitions
+
+**Profit:** revenue minus production budget (Profit = Revenue − Production Budget)
+
+**Production-Budget ROI:** Profit divided by production budget (ROI = (Revenue − Production Budget) / Production Budget)
+- ROI is calculated only where production budget is positive. It represents revenue relative to production budget, not complete financial profitability.
+
+**Primary Genre and Production Company:** For grouped comparisons, the first listed genre and production company are used as the primary classifications. Movies with multiple genres or production companies may therefore be represented by only one category in these analyses.
+
+## Limitations
 
 - **Inflation:** Financial values are nominal and have not been adjusted for inflation, limiting direct comparisons across historical periods.
-- **Incomplete recent data:** The most recent years in the dataset may be incomplete and should not be interpreted as definitive industry trends.
-- **Selection bias:** Filtering on release status, vote counts, and availability of financial and rating information excludes some movies and may affect observed patterns.
-- **ROI interpretation:** Revenue minus budget is a simplified profitability measure. It does not account for distribution costs, marketing expenses, or other financial considerations.
+- **Incomplete recent data:** Recent years may be incompletely represented and should not be interpreted as definitive industry trends.
+- **Selection bias:** Filtering by release status, vote counts, and availability of financial and rating information excludes some movies and may affect observed patterns.
+- **Simplified profitability:** Revenue minus production budget excludes marketing, distribution, financing, and other costs. ROI should be interpreted as production-budget ROI rather than net profit or studio return.
 - **Observational analysis:** Associations between release timing, budgets, genres, and outcomes do not establish causality.
-- **Audience ratings:** TMDB audience ratings reflect platform users and should not be treated as equivalent to professional critical assessments or representative audience surveys.
+- **Audience ratings:** TMDB ratings reflect users of the platform and may not represent the broader moviegoing population or professional critics.
+- **Classification:** Using the first listed genre and production company simplifies comparisons but may not capture the full classification of each movie.
 
-### Reproducibility
+## Reproducibility
 
-To reproduce the analysis:
+To run the dashboard locally:
 
-1. Obtain the source dataset from Kaggle and place it in the designated data directory.
-2. Install the Python dependencies listed in requirements.txt.
-3. Run the Python preprocessing script to generate the cleaned CSV.
-4. Install the required R packages and open the R Markdown analysis source.
-5. Knit the R Markdown document to HTML to regenerate the report.
+- Clone or download this repository.
+- Obtain the source dataset from Kaggle and place it in the designated data directory.
+- Run the Python preprocessing script to generate the cleaned dataset.
+- Ensure the resulting CSV is saved as data/TMDB_movies_clean.csv.
+- Install the required R packages.
+- Open the project in RStudio and run app.R.
 
-Exact execution instructions and package versions will be provided alongside the source scripts.
+The deployed dashboard uses the cleaned CSV included in the project. Refer to the source files for preprocessing and analytical implementation details.
 
-### Future Work
+## Future Work
 
 Potential extensions include:
 
 - Inflation-adjusted profitability analysis
 - Statistical hypothesis testing of observed release-day and seasonal differences
-- Regression modeling to evaluate associations between budget, genre, release timing, and financial outcomes
-- Robustness checks across different vote-count thresholds and time periods
+- Regression modeling to examine associations between budget, genre, release timing, and financial outcomes
+- Robustness checks across alternative vote-count thresholds and time periods
 - Improved handling of missing data and potential selection bias
-- Interactive filtering and exploration through a deployed Shiny application
+- More detailed analysis of genre combinations and multiple production companies
+- Incorporating additional financial or industry data to improve profitability estimates
 
-### Acknowledgments
+## Acknowledgments
+
+Dataset provided by the TMDB Movies Dataset contributor on Kaggle. This is an independent educational data analytics project and is not affiliated with TMDB.
+
+## Acknowledgments
 
 Dataset provided by the TMDB Movies Dataset contributor on Kaggle. This is an independent educational data analytics project and is not affiliated with TMDB.
