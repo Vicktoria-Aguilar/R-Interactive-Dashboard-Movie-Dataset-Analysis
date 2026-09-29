@@ -5,7 +5,7 @@
 **Tools:** Python, R, ggplot2, dplyr, tidyverse, lubridate  
 **Project:** Data Analytics Visualization  
 
-View Interactive Dashboard · View Source Code
+## [View Interactive Dashboard]("https://9slkla-vicktoria0aguilar.shinyapps.io/tmdb_dashboard/") · View Source Code
 
 ## Project Overview
 
